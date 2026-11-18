@@ -19,22 +19,22 @@ composer, above anything you typed meanwhile. Nothing is sent until you press En
 
 The helper's task is pi-better's [helper.md](./helper.md), unchanged.
 
+## Install
+
+```bash
+openclaw plugins install @obviyus/better-prompt
+```
+
+The install shows the plugin's capabilities, including **conversation access** (the helper
+reads a copy of your chat). Approve it once and **Better** appears in the composer; no config
+edits or restart. To turn conversation access off later, set
+`plugins.entries.better-prompt.hooks.allowConversationAccess` to `false`.
+
 ## Requirements
 
-- OpenClaw with plugin forks that may run `read`, `ls` and `exec` (the release that ships the
-  `runForkedTurn` session-tools change).
+- OpenClaw with plugin forks that may run `read`, `ls` and `exec`, and capability-approved
+  conversation access.
 - The chat's tool policy must allow `read`, `ls` and `exec`.
-- The plugin reads conversations, so enable conversation access for it:
-
-```json5
-{
-  plugins: {
-    entries: {
-      "better-prompt": { enabled: true, hooks: { allowConversationAccess: true } },
-    },
-  },
-}
-```
 
 ## Develop
 

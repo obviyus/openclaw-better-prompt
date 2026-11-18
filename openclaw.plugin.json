@@ -18,6 +18,7 @@
     ]
   },
   "contracts": {
+    "conversationAccess": ["read"],
     "tools": []
   }
 }
