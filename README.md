@@ -3,10 +3,10 @@
 `/better` from [pi-better](https://github.com/nicobailon/pi-better) for OpenClaw's Control UI.
 
 Type a rough request in a chat's composer and press the **Better** button (the pencil with
-sparkles, next to **+**). A helper reads your code, files and logs on a read-only copy of the
-chat while a card above the composer shows its tools. Then the card offers a deeper version of
-your request: **Use** (Tab) replaces your draft and **Undo** brings it back; **Dismiss** (Esc)
-keeps your draft. Nothing is sent until you press Enter.
+sparkles, next to **+**; it waits until you have typed something). A helper reads your code,
+files and logs on a read-only copy of the chat while a card above the composer shows its tools.
+Then the deeper version of your request replaces your draft; **Undo** (or ⌘Z) brings your draft
+back. Nothing is sent until you press Enter.
 
 - **It reuses the chat's prompt cache.** The helper is a fork of the chat: it sends the chat's
   own system prompt, tool list, model and thinking level, then its task, so the provider serves

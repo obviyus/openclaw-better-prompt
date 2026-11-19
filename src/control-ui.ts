@@ -19,6 +19,8 @@ export default defineControlUiPlugin({
 			label: "Better",
 			icon: "pencilSparkles",
 			placement: "composer",
+			// Better deepens what you typed, so it waits for a draft, like the send button.
+			resolve: ({ draft }) => (draft?.trim() ? {} : { disabled: true, label: "Better: type a prompt first" }),
 			async run({ sessionKey, agentId, composer, host: actionHost }) {
 				if (!composer || !sessionKey) return;
 				const client = createFeatureClient(contract, actionHost);
@@ -47,8 +49,8 @@ export default defineControlUiPlugin({
 					if (task.signal.aborted) return;
 					const result = await client.invoke("take", { runId }, target);
 					if (result.improved) {
-						// Never sent, never typed over: offered beside the draft, in the same card.
-						await task.propose(result.improved, { title: "Better rewrote your prompt" });
+						// Replaces the draft at once as one undoable edit; never sent.
+						await task.propose(result.improved, { title: "Better rewrote your prompt", insert: true });
 					} else if (!result.cancelled) {
 						task.fail(result.error ?? "The helper failed without an error message.");
 					}
