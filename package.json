@@ -1,6 +1,6 @@
 {
   "name": "@obviyus/better-prompt",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "OpenClaw plugin: /better from pi-better. Deepens a prompt on a read-only copy of the chat and puts it in the composer.",
   "license": "MIT",
   "type": "module",
@@ -22,12 +22,10 @@
     "test": "node --test src/better.test.ts src/progress.test.ts",
     "test:runtime": "TSX_TSCONFIG_PATH=\"${OPENCLAW_SOURCE:?set OPENCLAW_SOURCE to an OpenClaw checkout}/tsconfig.json\" \"$OPENCLAW_SOURCE/node_modules/.bin/tsx\" --test src/index.test.ts"
   },
-  "dependencies": {
-    "typebox": "^1.3.17"
-  },
   "devDependencies": {
     "@types/node": "^24.19.2",
     "esbuild": "0.28.2",
+    "typebox": "^1.3.17",
     "typescript": "7.0.2"
   },
   "peerDependencies": {
