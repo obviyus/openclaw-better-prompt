@@ -12,7 +12,7 @@
     "properties": {}
   },
   "controlUi": {
-    "entry": "dist/control-ui/8d62d2e48f3e07023d10bd6455296a5e18b0afe16cf82775abdbfb713bce651d/index.js"
+    "entry": "dist/control-ui/ae6c3d3e399e4b5694499f6397b72a4b8e6977f05358e5eb99eeac169a136a74/index.js"
   },
   "contracts": {
     "conversationAccess": [
