@@ -1,5 +1,8 @@
 # Better Prompt
 
+> Community plugin, not an official `@openclaw/*` package. Published to ClawHub under the
+> `obviyus` owner scope.
+
 `/better` from [pi-better](https://github.com/nicobailon/pi-better) for OpenClaw's Control UI.
 
 Type a rough request in a chat's composer and press the **Better** button (the pencil with
@@ -24,7 +27,7 @@ The helper's task is pi-better's [helper.md](./helper.md), unchanged.
 ## Install
 
 ```bash
-openclaw plugins install @obviyus/better-prompt
+openclaw plugins install clawhub:@obviyus/better-prompt
 ```
 
 The install shows the plugin's capabilities, including **conversation access** (the helper
@@ -34,8 +37,9 @@ edits or restart. To turn conversation access off later, set
 
 ## Requirements
 
-- OpenClaw with plugin forks that may run `read`, `ls` and `exec`, capability-approved
-  conversation access, and composer tasks.
+- OpenClaw with composer tasks (`main` from 2026-11-19, then the first release cut after it),
+  plugin forks that may run `read`, `ls` and `exec`, and capability-approved conversation
+  access. On an older OpenClaw, pressing **Better** says to update.
 - The chat's tool policy must allow `read`, `ls` and `exec`.
 
 ## Develop

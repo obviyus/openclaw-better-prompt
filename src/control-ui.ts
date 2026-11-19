@@ -20,9 +20,14 @@ export default defineControlUiPlugin({
 			icon: "pencilSparkles",
 			placement: "composer",
 			// Better deepens what you typed, so it waits for a draft, like the send button.
-			resolve: ({ draft }) => (draft?.trim() ? {} : { disabled: true, label: "Better: type a prompt first" }),
+			// A host without the draft in resolve stays enabled, so the click explains what is missing.
+			resolve: ({ draft }) =>
+				draft === undefined || draft.trim() ? {} : { disabled: true, label: "Better: type a prompt first" },
 			async run({ sessionKey, agentId, composer, host: actionHost }) {
 				if (!composer || !sessionKey) return;
+				if (typeof composer.startTask !== "function") {
+					throw new Error("Better needs a newer OpenClaw, with composer tasks. Update OpenClaw, then try again.");
+				}
 				const client = createFeatureClient(contract, actionHost);
 				const target = { sessionKey, agentId };
 				// The host shows the card, the clock, Cancel and the pressed icon from here on.
