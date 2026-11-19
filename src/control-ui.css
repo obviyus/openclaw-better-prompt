@@ -1,19 +1,123 @@
+/* The composer card, built from the host's attached-card tokens; the slot height is shared
+   with the host's draft proposal so the hand-over does not move the composer. */
 .better-prompt-progress {
 	display: grid;
-	gap: 2px;
-	padding: 4px 12px;
-	font: 12px/1.4 var(--font-mono, ui-monospace, monospace);
-	color: var(--muted, var(--text));
+	grid-template-rows: var(--chat-stack-header-height, 40px) 1fr;
+	block-size: var(--chat-composer-float-card-block-size, 92px);
+	border: 1px solid var(--chat-composer-hairline, var(--border));
+	border-radius: calc(20px * var(--openclaw-corner-radius-scale, 1));
+	corner-shape: superellipse(1.5);
+	background: var(--composer-attached-surface, var(--bg-elevated));
+	backdrop-filter: blur(8px);
 	overflow: hidden;
 }
 .better-prompt-progress[hidden] {
 	display: none;
 }
-.better-prompt-progress > div {
+@media (prefers-reduced-motion: no-preference) {
+	.better-prompt-progress {
+		animation: better-prompt-in var(--duration-normal, 180ms) var(--ease-out, ease-out);
+	}
+}
+@keyframes better-prompt-in {
+	from {
+		opacity: 0;
+		transform: translateY(4px);
+	}
+}
+.better-prompt-progress__head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+	padding: 0 8px 0 14px;
+}
+.better-prompt-progress__glyph {
+	display: inline-flex;
+	flex: none;
+	color: var(--accent);
+}
+.better-prompt-progress__glyph svg {
+	width: var(--chat-stack-icon-size, 14px);
+	height: var(--chat-stack-icon-size, 14px);
+}
+.better-prompt-progress[data-state="failed"] .better-prompt-progress__glyph {
+	color: var(--danger);
+}
+.better-prompt-progress__title {
+	color: var(--text-strong);
+	font-weight: 560;
 	white-space: nowrap;
+}
+.better-prompt-progress__clock {
+	margin-inline-end: auto;
+	min-width: 0;
+	overflow: hidden;
+	color: var(--muted);
+	font-variant-numeric: tabular-nums;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.better-prompt-progress__head .btn {
+	flex: none;
+}
+/* Exactly two chip rows, newest first; older chips wrap out of view. */
+.better-prompt-progress__tools {
+	display: flex;
+	flex-wrap: wrap;
+	align-content: flex-start;
+	gap: 4px 12px;
+	min-width: 0;
+	max-block-size: 40px;
+	margin: 0 14px 10px;
+	overflow: hidden;
+	color: var(--muted);
+	font: 12px/18px var(--font-mono, ui-monospace, monospace);
+}
+.better-prompt-progress__count {
+	color: var(--muted);
+	font-family: var(--font-body, inherit);
+	white-space: nowrap;
+}
+.better-prompt-progress__tool {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	max-width: 34ch;
+	white-space: nowrap;
+}
+.better-prompt-progress__tool span {
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
-.better-prompt-progress > div:first-child {
-	color: var(--accent, var(--text));
+.better-prompt-progress__tool[data-state="running"] {
+	color: var(--text);
+}
+.better-prompt-progress__tool i {
+	width: 1ch;
+	font-style: normal;
+	text-align: center;
+}
+.better-prompt-progress__tool[data-state="ok"] i {
+	color: var(--ok);
+}
+.better-prompt-progress__tool[data-state="failed"] i {
+	color: var(--danger);
+}
+.better-prompt-progress__message {
+	display: -webkit-box;
+	margin: 0 14px 10px;
+	overflow: hidden;
+	color: var(--muted);
+	line-height: 20px;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+}
+.better-prompt-sr {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
 }

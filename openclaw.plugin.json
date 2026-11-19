@@ -12,13 +12,15 @@
     "properties": {}
   },
   "controlUi": {
-    "entry": "dist/control-ui/75bfd76b6db98f2e6c1c1acd488adc708f213eef85c0e53a448dbb78e8add74a/index.js",
+    "entry": "dist/control-ui/27d0f87f58d9832f3cb290f179f3b461f6005e3f9551d8d5f4a81cf50cb3f5aa/index.js",
     "styles": [
-      "dist/control-ui/75bfd76b6db98f2e6c1c1acd488adc708f213eef85c0e53a448dbb78e8add74a/index.css"
+      "dist/control-ui/27d0f87f58d9832f3cb290f179f3b461f6005e3f9551d8d5f4a81cf50cb3f5aa/index.css"
     ]
   },
   "contracts": {
-    "conversationAccess": ["read"],
+    "conversationAccess": [
+      "read"
+    ],
     "tools": []
   }
 }
