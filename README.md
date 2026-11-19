@@ -2,9 +2,11 @@
 
 `/better` from [pi-better](https://github.com/nicobailon/pi-better) for OpenClaw's Control UI.
 
-Type a rough request in a chat's composer and press **Better**. A helper reads your code, files
-and logs on a read-only copy of the chat, then puts a deeper version of your request in the
-composer, above anything you typed meanwhile. Nothing is sent until you press Enter.
+Type a rough request in a chat's composer and press the **Better** button (the pencil with
+sparkles, next to **+**). A helper reads your code, files and logs on a read-only copy of the
+chat while a card above the composer shows its tools. Then the card offers a deeper version of
+your request: **Use** (Tab) replaces your draft and **Undo** brings it back; **Dismiss** (Esc)
+keeps your draft. Nothing is sent until you press Enter.
 
 - **It reuses the chat's prompt cache.** The helper is a fork of the chat: it sends the chat's
   own system prompt, tool list, model and thinking level, then its task, so the provider serves
@@ -14,8 +16,8 @@ composer, above anything you typed meanwhile. Nothing is sent until you press En
   approvals would ask about is denied. Like pi-better, a shell command could still write a file;
   only the helper's instructions tell it not to.
 - **It works while the agent is busy**, on the chat as of the moment you pressed Better.
-- **One at a time per chat.** Press **Cancel** (the same button) to stop it. Leaving the chat
-  also stops it. It stops by itself after 20 minutes.
+- **One at a time per chat.** Press **Cancel** on the card, or the Better button again, to stop
+  it. Leaving the chat also stops it. It stops by itself after 20 minutes.
 
 The helper's task is pi-better's [helper.md](./helper.md), unchanged.
 
@@ -32,8 +34,8 @@ edits or restart. To turn conversation access off later, set
 
 ## Requirements
 
-- OpenClaw with plugin forks that may run `read`, `ls` and `exec`, and capability-approved
-  conversation access.
+- OpenClaw with plugin forks that may run `read`, `ls` and `exec`, capability-approved
+  conversation access, and composer tasks.
 - The chat's tool policy must allow `read`, `ls` and `exec`.
 
 ## Develop
