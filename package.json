@@ -1,6 +1,6 @@
 {
   "name": "@obviyus/better-prompt",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "OpenClaw plugin: /better from pi-better. Deepens a prompt on a read-only copy of the chat and puts it in the composer.",
   "license": "MIT",
   "type": "module",
