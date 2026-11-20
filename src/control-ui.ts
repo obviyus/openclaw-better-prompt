@@ -40,7 +40,14 @@ export default defineControlUiPlugin({
 	activate(host) {
 		// The helper runs in the Gateway, one per chat, so leaving the chat only retires the card.
 		// Coming back attaches to the same run: the card returns with its clock and tools, and a
-		// result that finished meanwhile is inserted (and sent, for "Better and send") then.
+		// Better result that finished meanwhile is inserted then. "Better and send" does not wait for
+		// the return: this browser sends its result while you are on another page. With the tab
+		// closed, nothing runs here, so the result is inserted and sent when the chat opens again.
+		const away = new Map<string, AbortController>();
+		// What a send while away did, shown when its chat opens again.
+		const awayOutcomes = new Map<string, { sent: true } | { improved?: string; error: string }>();
+		const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
 		async function follow(
 			{ sessionKey, agentId, composer, host: actionHost, signal }: Context,
 			send: boolean,
@@ -52,6 +59,22 @@ export default defineControlUiPlugin({
 			}
 			const client = createFeatureClient(contract, actionHost);
 			const target = { sessionKey, agentId };
+			const outcome = prompt === undefined ? awayOutcomes.get(sessionKey) : undefined;
+			if (outcome) {
+				awayOutcomes.delete(sessionKey);
+				if ("sent" in outcome) {
+					// The draft this browser improved was sent; the composer starts empty, as after Enter.
+					composer.setDraft("");
+					return;
+				}
+				const task = composer.startTask({ title: "Improving your prompt" });
+				if (outcome.improved) {
+					await task.propose(outcome.improved, { title: `Not sent: ${outcome.error}`, insert: true });
+				} else {
+					task.fail(outcome.error);
+				}
+				return;
+			}
 			let run = await client.invoke("active", {}, target);
 			let token = run.runId ? tokens.get(sessionKey, run.runId) : undefined;
 			if (prompt === undefined) {
@@ -66,6 +89,8 @@ export default defineControlUiPlugin({
 			}
 			const runId = run.runId;
 			if (!runId || !token) return;
+			// Coming back takes over a send that was waiting while away.
+			away.get(sessionKey)?.abort();
 			// The host shows the card, the clock, Cancel and the pressed icon from here on.
 			const task = composer.startTask({ title: "Improving your prompt", startedAt: run.startedAt });
 			if (run.progress) task.update({ summary: summary(run.progress), steps: steps(run.progress) });
@@ -89,7 +114,10 @@ export default defineControlUiPlugin({
 					finished.promise,
 					new Promise((resolve) => task.signal.addEventListener("abort", resolve, { once: true })),
 				]);
-				if (task.signal.aborted) return;
+				if (task.signal.aborted) {
+					if (signal.aborted && run.send) sendWhenDone(target, runId, token);
+					return;
+				}
 				const result = await client.invoke("take", { runId, token }, target);
 				tokens.clear(sessionKey);
 				if (result.improved) {
@@ -99,10 +127,55 @@ export default defineControlUiPlugin({
 					task.fail(result.error ?? "The helper failed without an error message.");
 				}
 			} catch (error) {
-				if (!task.signal.aborted) task.fail(error instanceof Error ? error.message : String(error));
+				if (!task.signal.aborted) task.fail(message(error));
 			} finally {
 				stopProgress();
 			}
+		}
+
+		// Left the chat during "Better and send": send the result as the composer would, with the
+		// session's own model and effort, keyed by the run so the Gateway admits it once. This uses
+		// the plugin's own host: the chat action's host stops events and calls once the chat closes.
+		// Accepted: coming back in the moment between the take and the send can show a failed card
+		// while the send still lands.
+		function sendWhenDone(target: { sessionKey: string; agentId?: string }, runId: string, token: string) {
+			const { sessionKey } = target;
+			const client = createFeatureClient(contract, host);
+			const stop = new AbortController();
+			away.set(sessionKey, stop);
+			const finished = Promise.withResolvers<void>();
+			stop.signal.addEventListener("abort", () => finished.resolve(), { once: true });
+			const stopProgress = client.on("progress", (progress) => {
+				if (progress.sessionKey === sessionKey && progress.runId === runId && progress.done) finished.resolve();
+			});
+			// The run may have finished between leaving the chat and subscribing here.
+			void client
+				.invoke("active", {}, target)
+				.then((run) => {
+					if (run.runId !== runId || run.progress?.done) finished.resolve();
+				})
+				.catch(() => finished.resolve());
+			void finished.promise
+				.then(async () => {
+					if (stop.signal.aborted) return;
+					const result = await client.invoke("take", { runId, token }, target);
+					tokens.clear(sessionKey);
+					if (!result.improved) {
+						if (!result.cancelled) awayOutcomes.set(sessionKey, { error: result.error ?? "The helper failed without an error message." });
+						return;
+					}
+					try {
+						await host.request("chat.send", { ...target, message: result.improved, idempotencyKey: `${runId}:send` });
+						awayOutcomes.set(sessionKey, { sent: true });
+					} catch (error) {
+						awayOutcomes.set(sessionKey, { improved: result.improved, error: message(error) });
+					}
+				})
+				.catch((error: unknown) => awayOutcomes.set(sessionKey, { error: message(error) }))
+				.finally(() => {
+					if (away.get(sessionKey) === stop) away.delete(sessionKey);
+					stopProgress();
+				});
 		}
 
 		// "Better and send" runs the same helper, then sends the result as Enter would.
