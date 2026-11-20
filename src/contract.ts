@@ -3,6 +3,13 @@ import { Type } from "typebox";
 
 const NoInput = Type.Object({}, { additionalProperties: false });
 const RunId = Type.String({ minLength: 1, maxLength: 200 });
+const Tools = Type.Array(
+	Type.Object({
+		label: Type.String({ maxLength: 400 }),
+		state: Type.Union([Type.Literal("running"), Type.Literal("ok"), Type.Literal("failed")]),
+	}),
+	{ maxItems: 12 },
+);
 
 export const contract = defineFeatureContract({
 	pluginId: "better-prompt",
@@ -10,8 +17,29 @@ export const contract = defineFeatureContract({
 		start: {
 			kind: "action",
 			description: "Deepen the draft (or the task in progress) on a read-only copy of this chat.",
-			input: Type.Object({ prompt: Type.String({ maxLength: 100_000 }) }, { additionalProperties: false }),
-			output: Type.Object({ runId: RunId }),
+			input: Type.Object(
+				{ prompt: Type.String({ maxLength: 100_000 }), send: Type.Optional(Type.Boolean()) },
+				{ additionalProperties: false },
+			),
+			output: Type.Object({ runId: RunId, startedAt: Type.Integer() }),
+		},
+		active: {
+			kind: "action",
+			description: "This chat's /better run, running or finished and not yet taken, so a returning composer can show it.",
+			input: NoInput,
+			output: Type.Object({
+				runId: Type.Optional(RunId),
+				startedAt: Type.Optional(Type.Integer()),
+				send: Type.Optional(Type.Boolean()),
+				progress: Type.Optional(
+					Type.Object({
+						tools: Tools,
+						toolCount: Type.Integer({ minimum: 0 }),
+						failedCount: Type.Integer({ minimum: 0 }),
+						done: Type.Boolean(),
+					}),
+				),
+			}),
 		},
 		cancel: {
 			kind: "action",
@@ -37,13 +65,7 @@ export const contract = defineFeatureContract({
 			sessionKey: Type.String({ maxLength: 512 }),
 			runId: RunId,
 			startedAt: Type.Integer(),
-			tools: Type.Array(
-				Type.Object({
-					label: Type.String({ maxLength: 400 }),
-					state: Type.Union([Type.Literal("running"), Type.Literal("ok"), Type.Literal("failed")]),
-				}),
-				{ maxItems: 12 },
-			),
+			tools: Tools,
 			toolCount: Type.Integer({ minimum: 0 }),
 			failedCount: Type.Integer({ minimum: 0 }),
 			done: Type.Boolean(),

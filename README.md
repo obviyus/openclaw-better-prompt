@@ -9,7 +9,8 @@ Type a rough request in a chat's composer and press the **Better** button (the p
 sparkles, next to **+**; it waits until you have typed something). A helper reads your code,
 files and logs on a read-only copy of the chat while a card above the composer shows its tools.
 Then the deeper version of your request replaces your draft; **Undo** (or ⌘Z) brings your draft
-back. Nothing is sent until you press Enter.
+back. Nothing is sent until you press Enter. **Better and send** (the lightning bolt beside it)
+does the same and then sends the new prompt, as Enter would.
 
 - **It reuses the chat's prompt cache.** The helper is a fork of the chat: it sends the chat's
   own system prompt, tool list, model and thinking level, then its task, so the provider serves
@@ -20,7 +21,8 @@ back. Nothing is sent until you press Enter.
   only the helper's instructions tell it not to.
 - **It works while the agent is busy**, on the chat as of the moment you pressed Better.
 - **One at a time per chat.** Press **Cancel** on the card, or the Better button again, to stop
-  it. Leaving the chat also stops it. It stops by itself after 20 minutes.
+  it. It keeps running when you switch chats or pages: come back and the card shows it again,
+  and a result that finished meanwhile goes in then. It stops by itself after 20 minutes.
 
 The helper's task is pi-better's [helper.md](./helper.md), unchanged.
 

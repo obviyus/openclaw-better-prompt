@@ -13,7 +13,17 @@ const HELPER_TIMEOUT_MS = 20 * 60 * 1000;
 const helper = readFileSync(new URL("../helper.md", import.meta.url), "utf8");
 
 type Result = { improved?: string; error?: string; cancelled?: boolean };
-type Run = { runId: string; connId?: string; controller: AbortController; result?: Result };
+type Snapshot = ReturnType<ReturnType<typeof createProgress>["snapshot"]>;
+type Run = {
+	runId: string;
+	connId?: string;
+	controller: AbortController;
+	startedAt: number;
+	/** Started by "Better and send": its result is sent once inserted. */
+	send: boolean;
+	progress: Snapshot & { done: boolean };
+	result?: Result;
+};
 
 function failure(error: unknown): string {
 	const outcome = error && typeof error === "object" ? Reflect.get(error, "terminalOutcome") : undefined;
@@ -37,7 +47,7 @@ export default defineFeaturePlugin({
 			return sessionKey;
 		};
 
-		async function start({ prompt }: { prompt: string }, context: FeatureInvocationContext) {
+		async function start({ prompt, send }: { prompt: string; send?: boolean }, context: FeatureInvocationContext) {
 			const sessionKey = sessionOf(context);
 			const current = runs.get(sessionKey);
 			if (current && !current.result) {
@@ -52,15 +62,20 @@ export default defineFeaturePlugin({
 				const workspace = api.runtime.agent.resolveAgentWorkspaceDir(config, action.agentId);
 				projectDirs.push(workspace, realpathSync.native(workspace));
 			}
+			const progress = createProgress(projectDirs);
 			const run: Run = {
 				runId: `better-prompt:${randomUUID()}`,
 				connId: action?.client?.connId,
 				controller: new AbortController(),
+				startedAt: Date.now(),
+				send: send === true,
+				progress: { ...progress.snapshot(), done: false },
 			};
-			const progress = createProgress(projectDirs);
-			const startedAt = Date.now();
-			const publish = (done: boolean) =>
-				events.emit("progress", { sessionKey, runId: run.runId, startedAt, ...progress.snapshot(), done });
+			// The latest snapshot stays on the run, so a returning composer shows the same card.
+			const publish = (done: boolean) => {
+				run.progress = { ...progress.snapshot(), done };
+				events.emit("progress", { sessionKey, runId: run.runId, startedAt: run.startedAt, ...run.progress });
+			};
 			// First, so an unavailable event service fails the start before anything is registered.
 			publish(false);
 			runs.set(sessionKey, run);
@@ -100,11 +115,15 @@ export default defineFeaturePlugin({
 					stopListening();
 					publish(true);
 				});
-			return { runId: run.runId };
+			return { runId: run.runId, startedAt: run.startedAt };
 		}
 
 		return {
 			start,
+			active: (_input, context) => {
+				const run = runs.get(sessionOf(context));
+				return run ? { runId: run.runId, startedAt: run.startedAt, send: run.send, progress: run.progress } : {};
+			},
 			cancel: (_input, context) => {
 				const run = runs.get(sessionOf(context));
 				if (!run || run.result) return { cancelled: false };
