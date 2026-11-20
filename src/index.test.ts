@@ -5,8 +5,8 @@ import plugin from "./index.ts";
 type Handler = (action: Record<string, unknown>) => Promise<{ ok: boolean; result?: unknown; error?: string }>;
 
 // The plugin listens to agent events only while a run is active, keeps one run per chat, and
-// hands the result only to the connection that started it.
-test("one run per chat, agent events only while it runs, result only to its starter", async () => {
+// hands the result only to the holder of its start token, whichever connection that is.
+test("one run per chat, agent events only while it runs, result only to its token", async () => {
 	const handlers = new Map<string, Handler>();
 	const emitted: Array<{ runId: string; done: boolean; tools: unknown[] }> = [];
 	let listeners = 0;
@@ -47,7 +47,7 @@ test("one run per chat, agent events only while it runs, result only to its star
 	assert.equal(listeners, 0);
 	const started = await call("start", { prompt: "make hover nicer" });
 	assert.equal(started.ok, true);
-	const { runId } = started.result as { runId: string };
+	const { runId, token } = started.result as { runId: string; token: string };
 	assert.equal(listeners, 1);
 	assert.deepEqual(forkParams?.tools, ["read", "ls", "exec"]);
 	assert.equal(forkParams?.timeoutMs, 20 * 60 * 1000);
@@ -63,7 +63,8 @@ test("one run per chat, agent events only while it runs, result only to its star
 	await new Promise((resolve) => setImmediate(resolve));
 	assert.equal(listeners, 0);
 	assert.equal(emitted.at(-1)?.done, true);
-	assert.equal((await call("take", { runId }, "window-2")).ok, false);
-	assert.deepEqual(await call("take", { runId }), { ok: true, result: { improved: "Better." } });
-	assert.equal((await call("take", { runId })).ok, false);
+	assert.equal((await call("take", { runId, token: "not-the-start-token" })).ok, false);
+	// A reload is a new connection; the token still takes the result, once.
+	assert.deepEqual(await call("take", { runId, token }, "window-2"), { ok: true, result: { improved: "Better." } });
+	assert.equal((await call("take", { runId, token })).ok, false);
 });

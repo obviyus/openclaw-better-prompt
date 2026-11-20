@@ -2,7 +2,7 @@
   "id": "better-prompt",
   "name": "Better Prompt",
   "description": "/better from pi-better: deepen a prompt on a read-only copy of the chat, then put it in the composer.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "activation": {
     "onStartup": true
   },

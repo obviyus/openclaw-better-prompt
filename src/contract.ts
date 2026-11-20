@@ -3,6 +3,7 @@ import { Type } from "typebox";
 
 const NoInput = Type.Object({}, { additionalProperties: false });
 const RunId = Type.String({ minLength: 1, maxLength: 200 });
+const Token = Type.String({ minLength: 16, maxLength: 200 });
 const Tools = Type.Array(
 	Type.Object({
 		label: Type.String({ maxLength: 400 }),
@@ -21,7 +22,8 @@ export const contract = defineFeatureContract({
 				{ prompt: Type.String({ maxLength: 100_000 }), send: Type.Optional(Type.Boolean()) },
 				{ additionalProperties: false },
 			),
-			output: Type.Object({ runId: RunId, startedAt: Type.Integer() }),
+			// `token` lets the browser that started the run take its result after a reload.
+			output: Type.Object({ runId: RunId, startedAt: Type.Integer(), token: Token }),
 		},
 		active: {
 			kind: "action",
@@ -49,8 +51,8 @@ export const contract = defineFeatureContract({
 		},
 		take: {
 			kind: "action",
-			description: "Take a finished /better result once, from the connection that started it.",
-			input: Type.Object({ runId: RunId }, { additionalProperties: false }),
+			description: "Take a finished /better result once, with the token its start returned.",
+			input: Type.Object({ runId: RunId, token: Token }, { additionalProperties: false }),
 			output: Type.Object({
 				improved: Type.Optional(Type.String()),
 				error: Type.Optional(Type.String()),

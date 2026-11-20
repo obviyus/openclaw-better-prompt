@@ -16,7 +16,8 @@ type Result = { improved?: string; error?: string; cancelled?: boolean };
 type Snapshot = ReturnType<ReturnType<typeof createProgress>["snapshot"]>;
 type Run = {
 	runId: string;
-	connId?: string;
+	/** Held by the browser that started the run; only it takes the result, across reloads. */
+	token: string;
 	controller: AbortController;
 	startedAt: number;
 	/** Started by "Better and send": its result is sent once inserted. */
@@ -65,7 +66,7 @@ export default defineFeaturePlugin({
 			const progress = createProgress(projectDirs);
 			const run: Run = {
 				runId: `better-prompt:${randomUUID()}`,
-				connId: action?.client?.connId,
+				token: randomUUID(),
 				controller: new AbortController(),
 				startedAt: Date.now(),
 				send: send === true,
@@ -115,7 +116,7 @@ export default defineFeaturePlugin({
 					stopListening();
 					publish(true);
 				});
-			return { runId: run.runId, startedAt: run.startedAt };
+			return { runId: run.runId, startedAt: run.startedAt, token: run.token };
 		}
 
 		return {
@@ -130,13 +131,12 @@ export default defineFeaturePlugin({
 				run.controller.abort();
 				return { cancelled: true };
 			},
-			take: ({ runId }, context) => {
+			take: ({ runId, token }, context) => {
 				const sessionKey = sessionOf(context);
 				const run = runs.get(sessionKey);
 				if (!run || run.runId !== runId) throw new Error("This /better run is no longer here.");
 				if (!run.result) throw new Error("/better is still running.");
-				const connId = context.source === "session-action" ? context.action.client?.connId : undefined;
-				if (run.connId && run.connId !== connId) throw new Error("Only the window that started /better can take its result.");
+				if (run.token !== token) throw new Error("Only the browser that started /better can take its result.");
 				runs.delete(sessionKey);
 				return run.result;
 			},
