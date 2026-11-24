@@ -45,7 +45,7 @@ export default definePluginEntry({
 		const runs = new Map<string, Run>();
 
 		type Target = { sessionKey: string; agentId: string; slot: string; signal: AbortSignal };
-		function start({ prompt, send }: { prompt: string; send?: boolean }, target: Target) {
+		async function start({ prompt, send }: { prompt: string; send?: boolean }, target: Target) {
 			const { sessionKey, slot } = target;
 			const current = runs.get(slot);
 			if (current && !current.result) {
@@ -69,9 +69,13 @@ export default definePluginEntry({
 				run.progress = { ...progress.snapshot(), done };
 			};
 			runs.set(slot, run);
-			// Subscribed only while this run is active.
+			// The fork's first agent event shows OpenClaw admitted it. Subscribed only while this run
+			// is active.
+			const admitted = Promise.withResolvers<void>();
 			const stopListening = api.runtime.events.onAgentEvent((event) => {
-				if (event.runId === run.runId && progress.apply(event)) update(false);
+				if (event.runId !== run.runId) return;
+				admitted.resolve();
+				if (progress.apply(event)) update(false);
 			});
 			const signal = AbortSignal.any([target.signal, run.controller.signal]);
 			const fork = (tools: string[]) =>
@@ -84,10 +88,15 @@ export default definePluginEntry({
 					signal,
 					onSettled: (outcome) => outcome,
 				});
-			const finished = fork(HELPER_TOOLS)
-				// OpenClaw admits exec only for the chat owner's own turns; anyone else gets a
-				// read-only helper, and the composer says so.
-				.then(async (settled) => (settled.status === "refused" ? { settled: await fork(READ_TOOLS), readOnly: true } : { settled, readOnly: false }))
+			// OpenClaw admits exec only on the chat owner's own turns, and refuses before any model
+			// call. Anyone else gets a read-only helper, and the composer says so. The second fork
+			// must start while this request still holds the chat's admission.
+			const first = fork(HELPER_TOOLS);
+			const refused = await Promise.race([
+				first.then((settled) => settled.status === "refused", () => false),
+				admitted.promise.then(() => false),
+			]);
+			const finished = (refused ? fork(READ_TOOLS).then((settled) => ({ settled, readOnly: true })) : first.then((settled) => ({ settled, readOnly: false })))
 				.then(({ settled, readOnly }): Result => {
 					if (settled.status === "refused") {
 						return { error: "This chat's tool policy does not let Better's helper read files (read and ls)." };
@@ -138,7 +147,7 @@ export default definePluginEntry({
 
 		api.registerGatewayMethod(
 			METHOD,
-			({ params, client, sessionAccessAuthority: auth, respond }) => {
+			async ({ params, client, sessionAccessAuthority: auth, respond }) => {
 				if (!auth) {
 					respond(false, undefined, { code: "FORBIDDEN", message: "Better runs in a chat you can write to." });
 					return;
@@ -153,7 +162,7 @@ export default definePluginEntry({
 					const borrow = auth.retain();
 					try {
 						borrow.assertCurrent();
-						const { started, run, finished } = start(input, { sessionKey, agentId, slot, signal: borrow.signal });
+						const { started, run, finished } = await start(input, { sessionKey, agentId, slot, signal: borrow.signal });
 						// A session reset or revoked grant cannot leave an accessible result behind.
 						const revoke = () => {
 							if (runs.get(slot) === run) runs.delete(slot);
