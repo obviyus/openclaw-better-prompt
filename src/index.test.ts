@@ -1,23 +1,25 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { setImmediate } from "node:timers/promises";
 import plugin from "./index.ts";
 
-type Handler = (action: Record<string, unknown>) => Promise<{ ok: boolean; result?: unknown; error?: string }>;
+type Settled = { status: "settled"; runId: string; value: unknown } | { status: "refused"; reason: "tool_policy" };
+type Handler = (opts: Record<string, unknown>) => void;
 
-// The plugin listens to agent events only while a run is active, keeps one run per chat, and
-// hands the result only to the holder of its start token, whichever connection that is.
-test("one run per chat, agent events only while it runs, result only to its token", async () => {
-	const handlers = new Map<string, Handler>();
-	const emitted: Array<{ runId: string; done: boolean; tools: unknown[] }> = [];
+// One session-scoped Gateway method serves every caller. Runs are private to the caller and
+// chat incarnation the host admitted, and need the start receipt; nothing is broadcast.
+function setup() {
+	let method: { name: string; handler: Handler; options: unknown } | undefined;
 	let listeners = 0;
 	let deliver: ((event: { runId: string; stream: string; data: Record<string, unknown> }) => void) | undefined;
-	const fork = Promise.withResolvers<{ status: "settled"; runId: string; value: unknown }>();
-	let forkParams: Record<string, unknown> | undefined;
+	const forks: Array<{ params: Record<string, unknown>; settle: (settled: Settled) => void }> = [];
 	const api = {
 		id: "better-prompt",
-		registerService: (service: { start: (context: unknown) => void }) =>
-			service.start({ gatewayEvents: { emit: (_event: string, payload: (typeof emitted)[number]) => emitted.push(payload) } }),
-		session: { controls: { registerSessionAction: ({ id, handler }: { id: string; handler: Handler }) => handlers.set(id, handler) } },
+		registerGatewayMethod: (name: string, handler: Handler, options: unknown) => {
+			method = { name, handler, options };
+		},
+		registerService: () => assert.fail("Better must not register a broadcasting service"),
+		session: { controls: { registerSessionAction: () => assert.fail("Better has no session actions") } },
 		runtime: {
 			config: { current: () => ({}) },
 			agent: { resolveAgentWorkspaceDir: () => process.cwd() },
@@ -33,38 +35,103 @@ test("one run per chat, agent events only while it runs, result only to its toke
 			},
 			subagent: {
 				runForkedTurn: async (params: Record<string, unknown> & { onSettled: (outcome: unknown) => unknown }) => {
-					forkParams = params;
-					const settled = await fork.promise;
-					return { ...settled, value: await params.onSettled(settled.value) };
+					const settled = Promise.withResolvers<Settled>();
+					forks.push({ params, settle: settled.resolve });
+					const result = await settled.promise;
+					return result.status === "settled" ? { ...result, value: await params.onSettled(result.value) } : result;
 				},
 			},
 		},
 	};
 	plugin.register(api as never);
-	const call = (id: string, payload: unknown, connId = "window-1") =>
-		handlers.get(id)!({ pluginId: "better-prompt", actionId: id, sessionKey: "agent:main:main", agentId: "main", payload, client: { connId, scopes: [] } });
+	const request = async (profile: string | undefined, incarnation: string, op: string, input: unknown, admitted = true) => {
+		type Value = { runId: string; token: string; progress: { tools: unknown[] }; improved?: string; readOnly?: boolean; error: string; cancelled?: boolean };
+		let output: { ok: boolean; value: Value; error: unknown } | undefined;
+		await method!.handler({
+			params: { op, input },
+			client: profile ? { authenticatedUserProfile: { profileId: profile } } : {},
+			sessionAccessAuthority: admitted
+				? {
+						target: { agentId: "main", sessionKey: "agent:main:main", sessionId: incarnation },
+						assertCurrent() {},
+						retain: () => ({ signal: new AbortController().signal, assertCurrent() {}, release() {} }),
+					}
+				: undefined,
+			respond: (ok: boolean, value: Value, error: unknown) => {
+				output = { ok, value, error };
+			},
+		});
+		return output!;
+	};
+	const flush = () => setImmediate();
+	const lifecycle = (runId: string) => deliver?.({ runId, stream: "lifecycle", data: { phase: "start" } });
+	return { method: () => method!, request, forks, flush, lifecycle, listeners: () => listeners, deliver: (event: Parameters<NonNullable<typeof deliver>>[0]) => deliver?.(event) };
+}
 
-	assert.equal(listeners, 0);
-	const started = await call("start", { prompt: "make hover nicer" });
+const reply = (runId: string) => ({ status: "settled" as const, runId, value: { runId, ok: true, text: "(1) …\n\n<improved-prompt>\nBetter.\n</improved-prompt>" } });
+
+test("one own-session method; private progress, cancel and result per caller and incarnation", async () => {
+	const { method, request, forks, flush, lifecycle, listeners, deliver } = setup();
+	assert.equal(method().name, "better-prompt.session.v1");
+	assert.deepEqual(method().options, { scope: "operator.write", profileAccess: "required", sessionAccess: { mode: "write", allowOwnSessionScope: true } });
+
+	assert.equal((await request("one", "first", "start", { prompt: "draft" }, false)).ok, false);
+	assert.equal(listeners(), 0);
+	const pending = request("one", "first", "start", { prompt: "make hover nicer" });
+	await flush();
+	assert.equal(listeners(), 1);
+	assert.deepEqual(forks[0].params.tools, ["read", "ls", "exec"]);
+	assert.equal(forks[0].params.timeoutMs, 20 * 60 * 1000);
+	assert.match(String(forks[0].params.prompt), /## Prompt to deepen\n\nmake hover nicer/);
+	// The start answers once OpenClaw admitted the fork.
+	lifecycle(String(forks[0].params.runId));
+	const started = await pending;
 	assert.equal(started.ok, true);
-	const { runId, token } = started.result as { runId: string; token: string };
-	assert.equal(listeners, 1);
-	assert.deepEqual(forkParams?.tools, ["read", "ls", "exec"]);
-	assert.equal(forkParams?.timeoutMs, 20 * 60 * 1000);
-	assert.match(String(forkParams?.prompt), /## Prompt to deepen\n\nmake hover nicer/);
-	assert.deepEqual(await call("start", { prompt: "again" }), { ok: false, error: "/better is already running; Cancel stops it.", code: "OPERATION_FAILED" });
+	const held = { runId: started.value.runId, token: started.value.token };
+	await assert.rejects(request("one", "first", "start", { prompt: "again" }), /already running/);
 
-	// Only this run's events reach the rows.
-	deliver?.({ runId: "someone-else", stream: "tool", data: { phase: "start", name: "read", toolCallId: "x", args: { path: "a" } } });
-	deliver?.({ runId, stream: "tool", data: { phase: "start", name: "read", toolCallId: "y", args: { path: "b.ts" } } });
-	assert.deepEqual(emitted.at(-1)?.tools, [{ label: "read b.ts", state: "running" }]);
+	// Only this run's events reach its rows, and only its holder reads them.
+	deliver({ runId: "someone-else", stream: "tool", data: { phase: "start", name: "read", toolCallId: "x", args: { path: "a" } } });
+	deliver({ runId: held.runId, stream: "tool", data: { phase: "start", name: "read", toolCallId: "y", args: { path: "b.ts" } } });
+	assert.deepEqual((await request("one", "first", "active", held)).value.progress.tools, [{ label: "read b.ts", state: "running" }]);
+	assert.deepEqual((await request("one", "first", "active", { runId: held.runId, token: crypto.randomUUID() })).value, {});
+	assert.deepEqual((await request("two", "first", "active", held)).value, {});
+	assert.deepEqual((await request("one", "replacement", "active", held)).value, {});
+	assert.deepEqual((await request("two", "first", "cancel", held)).value, { cancelled: false });
 
-	fork.resolve({ status: "settled", runId, value: { runId, ok: true, text: "(1) …\n\n<improved-prompt>\nBetter.\n</improved-prompt>" } });
-	await new Promise((resolve) => setImmediate(resolve));
-	assert.equal(listeners, 0);
-	assert.equal(emitted.at(-1)?.done, true);
-	assert.equal((await call("take", { runId, token: "not-the-start-token" })).ok, false);
-	// A reload is a new connection; the token still takes the result, once.
-	assert.deepEqual(await call("take", { runId, token }, "window-2"), { ok: true, result: { improved: "Better." } });
-	assert.equal((await call("take", { runId, token })).ok, false);
+	forks[0].settle(reply(held.runId));
+	await flush();
+	assert.equal(listeners(), 0);
+	await assert.rejects(request("two", "first", "take", held), /unavailable/);
+	await assert.rejects(request("one", "first", "take", { runId: held.runId, token: crypto.randomUUID() }), /unavailable/);
+	assert.deepEqual((await request("one", "first", "take", held)).value, { improved: "Better." });
+	await assert.rejects(request("one", "first", "take", held), /unavailable/);
+	assert.equal((await request("one", "first", "nope", held)).ok, false);
+	assert.equal(forks.length, 1);
+});
+
+test("exec refused: the read-only helper starts within the same request and says so", async () => {
+	const { request, forks, flush } = setup();
+	const pending = request(undefined, "first", "start", { prompt: "draft" });
+	await flush();
+	forks[0].settle({ status: "refused", reason: "tool_policy" });
+	const started = await pending;
+	// Started before the start answered, while the request still held the chat's admission.
+	assert.deepEqual(forks[1].params.tools, ["read", "ls"]);
+	const held = { runId: started.value.runId, token: started.value.token };
+	forks[1].settle(reply(held.runId));
+	await flush();
+	assert.deepEqual((await request(undefined, "first", "take", held)).value, { improved: "Better.", readOnly: true });
+});
+
+test("read and ls refused too: a clear error", async () => {
+	const { request, forks, flush } = setup();
+	const pending = request("one", "first", "start", { prompt: "draft" });
+	await flush();
+	forks[0].settle({ status: "refused", reason: "tool_policy" });
+	const started = await pending;
+	const held = { runId: started.value.runId, token: started.value.token };
+	forks[1].settle({ status: "refused", reason: "tool_policy" });
+	await flush();
+	assert.match((await request("one", "first", "take", held)).value.error, /tool policy does not let Better's helper read files/);
 });

@@ -15,10 +15,15 @@ does the same and then sends the new prompt, as Enter would.
 - **It reuses the chat's prompt cache.** The helper is a fork of the chat: it sends the chat's
   own system prompt, tool list, model and thinking level, then its task, so the provider serves
   the chat's cached history.
-- **It can only read.** It runs `read`, `ls` and `exec` (for searches); every other tool call is
-  refused. `exec` runs only on chats you own, and never asks for approval: a command your exec
-  approvals would ask about is denied. Like pi-better, a shell command could still write a file;
-  only the helper's instructions tell it not to.
+- **It can only read.** It asks for `read`, `ls` and `exec` (for searches); every other tool
+  call is refused. OpenClaw admits `exec` only when the chat's latest turn is yours and you own
+  the Gateway, and never asks for approval: a command your exec approvals would ask about is
+  denied. Anyone else, or a chat whose tool policy refuses `exec`, gets a read-only helper with
+  `read` and `ls`, and the card says the rewrite ran read-only. Like pi-better, a shell command
+  could still write a file; only the helper's instructions tell it not to.
+- **It works for everyone who can write in the chat**, including team members with only
+  their own chats' write access. Its progress and result are private: only the browser that
+  started a run, signed in as the same person, sees its tools, cancels it or takes its result.
 - **It works while the agent is busy**, on the chat as of the moment you pressed Better.
 - **One at a time per chat.** Press **Cancel** on the card, or the Better button again, to stop
   it. It keeps running when you switch chats or pages: come back and the card shows it again,
@@ -39,10 +44,11 @@ edits or restart. To turn conversation access off later, set
 
 ## Requirements
 
-- OpenClaw with composer tasks (`main` from 2026-11-19, then the first release cut after it),
-  plugin forks that may run `read`, `ls` and `exec`, and capability-approved conversation
-  access. On an older OpenClaw, pressing **Better** says to update.
-- The chat's tool policy must allow `read`, `ls` and `exec`.
+- OpenClaw 2026.11.11 or later. Better needs
+  [openclaw/openclaw#204411](https://github.com/openclaw/openclaw/pull/204411) (merged as
+  `56f8670`), which runs a plugin's helper in the caller's own chat; the 2026.11.10 release line
+  was cut before it. Conversation access must be approved.
+- The chat's tool policy must allow `read` and `ls`; `exec` is optional.
 
 ## Develop
 
