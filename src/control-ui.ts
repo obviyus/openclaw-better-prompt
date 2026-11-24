@@ -1,10 +1,8 @@
 import { defineControlUiPlugin, type ControlUiAction } from "openclaw/plugin-sdk/control-ui";
-import { createFeatureClient, type FeatureInput, type FeatureOutput, type FeatureOperationName } from "openclaw/plugin-sdk/feature-contract";
-import { contract } from "./contract.ts";
+import { METHOD, type Active, type Operations, type Progress, type Receipt } from "./contract.ts";
 
-type Progress = NonNullable<FeatureOutput<typeof contract, "active">["progress"]>;
-type Receipt = FeatureInput<typeof contract, "take">;
 type Context = Parameters<ControlUiAction["run"]>[0];
+type Target = { sessionKey: string; agentId?: string };
 type Snapshot = Pick<Progress, "tools" | "toolCount" | "failedCount">;
 
 // A session fork is silent, so its reply never streams: the card shows only the helper's tools.
@@ -36,19 +34,15 @@ const tokens = {
 		localStorage.removeItem(this.key(sessionKey));
 	},
 };
-function transport(host: Context["host"]) {
-	const legacy = createFeatureClient(contract, host);
-	return { invoke<K extends FeatureOperationName<typeof contract>>(op: K, input: FeatureInput<typeof contract, K>, target: { sessionKey: string; agentId?: string }): Promise<FeatureOutput<typeof contract, K>> {
-		// This only selects a transport. Both are independently authorized by the Gateway.
-		return host.connection.canWrite || host.connection.canAdmin ? legacy.invoke(op, input, target)
-			: host.request("better-prompt.session.v1", { ...target, op, input });
-	} };
-}
+// One session-scoped method for every caller; the Gateway admits it for chats the caller may write.
+type Client = { invoke<K extends keyof Operations>(op: K, input: Operations[K][0], target: Target): Promise<Operations[K][1]> };
+const connect = (host: Context["host"]): Client => ({
+	invoke: (op, input, target) => host.request(METHOD, { ...target, op, input }),
+});
 
-async function waitForRun(client: ReturnType<typeof transport>, target: {sessionKey: string; agentId?: string}, receipt: Receipt,
-	signal: AbortSignal, update?: (p: Progress) => void) {
+async function waitForRun(client: Client, target: Target, receipt: Receipt, signal: AbortSignal, update?: (p: Progress) => void) {
 	while (!signal.aborted) {
-		let run: FeatureOutput<typeof contract, "active">;
+		let run: Active;
 		try { run = await client.invoke("active", receipt, target); } catch (error) { if (signal.aborted) return; throw error; }
 		if (signal.aborted) return;
 		if (!run.runId) throw new Error("This /better run is unavailable.");
@@ -62,7 +56,7 @@ async function waitForRun(client: ReturnType<typeof transport>, target: {session
 	}
 }
 export default defineControlUiPlugin({
-	id: contract.pluginId,
+	id: "better-prompt",
 	activate(host) {
 		// The helper runs in the Gateway, one per chat, so leaving the chat only retires the card.
 		// Coming back attaches to the same run: the card returns with its clock and tools, and a
@@ -83,7 +77,7 @@ export default defineControlUiPlugin({
 			if (typeof composer.startTask !== "function") {
 				throw new Error("Better needs a newer OpenClaw, with composer tasks. Update OpenClaw, then try again.");
 			}
-			const client = transport(actionHost);
+			const client = connect(actionHost);
 			const target = { sessionKey, agentId };
 			const outcome = prompt === undefined ? awayOutcomes.get(sessionKey) : undefined;
 			if (outcome) {
@@ -103,7 +97,7 @@ export default defineControlUiPlugin({
 			}
 			const held = tokens.get(sessionKey);
 			if (!held && prompt === undefined) return;
-			let run: FeatureOutput<typeof contract, "active"> = held ? await client.invoke("active", held, target) : {};
+			let run: Active = held ? await client.invoke("active", held, target) : {};
 			let token = run.runId === held?.runId ? held?.token : undefined;
 			if (prompt === undefined) {
 				// Attach shows only this button's own run, and only in the browser that started it.
@@ -143,7 +137,10 @@ export default defineControlUiPlugin({
 				tokens.clear(sessionKey);
 				if (result.improved) {
 					// Replaces the draft at once as one undoable edit; with send, the composer then sends it.
-					await task.propose(result.improved, { title: "Better rewrote your prompt", insert: true, send: run.send });
+					const title = result.readOnly
+						? "Better rewrote your prompt read-only: this chat did not let it run commands"
+						: "Better rewrote your prompt";
+					await task.propose(result.improved, { title, insert: true, send: run.send });
 				} else if (!result.cancelled) {
 					task.fail(result.error ?? "The helper failed without an error message.");
 				}
@@ -157,9 +154,9 @@ export default defineControlUiPlugin({
 		// the plugin's own host: the chat action's host stops events and calls once the chat closes.
 		// Accepted: coming back in the moment between the take and the send can show a failed card
 		// while the send still lands.
-		function sendWhenDone(target: { sessionKey: string; agentId?: string }, runId: string, token: string) {
+		function sendWhenDone(target: Target, runId: string, token: string) {
 			const { sessionKey } = target;
-			const client = transport(host);
+			const client = connect(host);
 			const stop = new AbortController();
 			away.set(sessionKey, stop);
 			void waitForRun(client, target, { runId, token }, stop.signal)

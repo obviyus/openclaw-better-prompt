@@ -1,29 +1,28 @@
 import { Check } from "typebox/value";
 import { randomUUID } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
-import { defineFeaturePlugin, type FeatureInvocationContext } from "openclaw/plugin-sdk/feature-plugin";
+import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { buildHelperTask, parseMarkedPrompt } from "./better.ts";
-import { contract } from "./contract.ts";
+import { METHOD, Receipt, StartInput, type Active, type Progress, type Result, type Started } from "./contract.ts";
 import { createProgress } from "./progress.ts";
 
-// pi-better's limits: the helper reads with read and ls and searches with the shell (exec);
-// OpenClaw lists every session tool for the cache and refuses the rest when called.
+// pi-better's limits: the helper reads with read and ls and searches with the shell (exec).
+// OpenClaw decides which of them this chat and caller may run.
 const HELPER_TOOLS = ["read", "ls", "exec"];
+const READ_TOOLS = ["read", "ls"];
 const HELPER_TIMEOUT_MS = 20 * 60 * 1000;
 // Shipped at the package root beside openclaw.plugin.json, unchanged from pi-better.
 const helper = readFileSync(new URL("../helper.md", import.meta.url), "utf8");
 
-type Result = { improved?: string; error?: string; cancelled?: boolean };
-type Snapshot = ReturnType<ReturnType<typeof createProgress>["snapshot"]>;
 type Run = {
 	runId: string;
-	/** Held by the browser that started the run; only it takes the result, across reloads. */
+	/** Held by the browser that started the run; only it reads, cancels or takes it, across reloads. */
 	token: string;
 	controller: AbortController;
 	startedAt: number;
 	/** Started by "Better and send": its result is sent once inserted. */
 	send: boolean;
-	progress: Snapshot & { done: boolean };
+	progress: Progress;
 	result?: Result;
 };
 
@@ -36,24 +35,16 @@ function failure(error: unknown): string {
 	return message.trim() || "The helper failed without an error message.";
 }
 
-export default defineFeaturePlugin({
-	contract,
+export default definePluginEntry({
+	id: "better-prompt",
 	name: "Better Prompt",
 	description: "/better from pi-better: deepen a prompt on a read-only copy of the chat, then put it in the composer.",
-	setup(api) {
-		// One run per chat, as in pi-better; a finished result waits here until its starter takes it.
+	register(api) {
+		// One run per person and chat incarnation, as in pi-better; a finished result waits here
+		// until its starter takes it.
 		const runs = new Map<string, Run>();
-		const sessionOf = (context: FeatureInvocationContext) => {
-			const sessionKey = context.source === "session-action" ? context.action.sessionKey : undefined;
-			if (!sessionKey) throw new Error("/better runs from a chat's composer.");
-			return sessionKey;
-		};
 
-		type Target = { sessionKey: string; agentId?: string; slot: string; signal?: AbortSignal };
-		const legacy = (context: FeatureInvocationContext): Target => {
-			const sessionKey = sessionOf(context);
-			return { sessionKey, slot: JSON.stringify(["legacy", sessionKey]), agentId: context.source === "session-action" ? context.action.agentId : undefined };
-		};
+		type Target = { sessionKey: string; agentId: string; slot: string; signal: AbortSignal };
 		function start({ prompt, send }: { prompt: string; send?: boolean }, target: Target) {
 			const { sessionKey, slot } = target;
 			const current = runs.get(slot);
@@ -62,13 +53,9 @@ export default defineFeaturePlugin({
 			}
 			// Resolved before the run is registered, so a missing workspace fails here instead of
 			// leaving /better stuck "already running" (as in pi-better).
-			const projectDirs: string[] = [];
-			if (target.agentId) {
-				const config = api.runtime.config.current({ clone: true });
-				const workspace = api.runtime.agent.resolveAgentWorkspaceDir(config, target.agentId);
-				projectDirs.push(workspace, realpathSync.native(workspace));
-			}
-			const progress = createProgress(projectDirs);
+			const config = api.runtime.config.current({ clone: true });
+			const workspace = api.runtime.agent.resolveAgentWorkspaceDir(config, target.agentId);
+			const progress = createProgress([workspace, realpathSync.native(workspace)]);
 			const run: Run = {
 				runId: `better-prompt:${randomUUID()}`,
 				token: randomUUID(),
@@ -86,19 +73,24 @@ export default defineFeaturePlugin({
 			const stopListening = api.runtime.events.onAgentEvent((event) => {
 				if (event.runId === run.runId && progress.apply(event)) update(false);
 			});
-			const finished = api.runtime.subagent
-				.runForkedTurn({
+			const signal = AbortSignal.any([target.signal, run.controller.signal]);
+			const fork = (tools: string[]) =>
+				api.runtime.subagent.runForkedTurn({
 					sessionKey,
 					prompt: buildHelperTask(helper, prompt.trim()),
-					tools: target.signal ? ["read", "ls"] : HELPER_TOOLS,
+					tools,
 					runId: run.runId,
 					timeoutMs: HELPER_TIMEOUT_MS,
-					signal: target.signal ? AbortSignal.any([target.signal, run.controller.signal]) : run.controller.signal,
+					signal,
 					onSettled: (outcome) => outcome,
-				})
-				.then((settled): Result => {
+				});
+			const finished = fork(HELPER_TOOLS)
+				// OpenClaw admits exec only for the chat owner's own turns; anyone else gets a
+				// read-only helper, and the composer says so.
+				.then(async (settled) => (settled.status === "refused" ? { settled: await fork(READ_TOOLS), readOnly: true } : { settled, readOnly: false }))
+				.then(({ settled, readOnly }): Result => {
 					if (settled.status === "refused") {
-						return { error: "The chat or requester policy did not allow this helper to read the session workspace." };
+						return { error: "This chat's tool policy does not let Better's helper read files (read and ls)." };
 					}
 					const outcome = settled.value;
 					if (!outcome.ok) {
@@ -106,7 +98,7 @@ export default defineFeaturePlugin({
 					}
 					if (!outcome.text?.trim()) return { error: "The helper finished without replying." };
 					try {
-						return { improved: parseMarkedPrompt(outcome.text) };
+						return { improved: parseMarkedPrompt(outcome.text), ...(readOnly ? { readOnly } : {}) };
 					} catch (error) {
 						return { error: `${failure(error)} The helper's whole reply was:\n\n${outcome.text}` };
 					}
@@ -118,15 +110,15 @@ export default defineFeaturePlugin({
 					stopListening();
 					update(true);
 				});
-			return { receipt: { runId: run.runId, startedAt: run.startedAt, token: run.token }, run, finished };
+			const started: Started = { runId: run.runId, startedAt: run.startedAt, token: run.token };
+			return { started, run, finished };
 		}
 
-		type Receipt = { runId: string; token: string };
 		function owned(slot: string, receipt: Receipt) {
 			const run = runs.get(slot);
 			return run && run.runId === receipt.runId && run.token === receipt.token ? run : undefined;
 		}
-		function active(slot: string, receipt: Receipt) {
+		function active(slot: string, receipt: Receipt): Active {
 			const run = owned(slot, receipt);
 			return run ? { runId: run.runId, startedAt: run.startedAt, send: run.send, progress: run.progress } : {};
 		}
@@ -136,7 +128,7 @@ export default defineFeaturePlugin({
 			run.controller.abort();
 			return { cancelled: true };
 		}
-		function take(slot: string, receipt: Receipt) {
+		function take(slot: string, receipt: Receipt): Result {
 			const run = owned(slot, receipt);
 			if (!run) throw new Error("This /better run is unavailable.");
 			if (!run.result) throw new Error("/better is still running.");
@@ -144,49 +136,50 @@ export default defineFeaturePlugin({
 			return run.result;
 		}
 
-		api.registerGatewayMethod("better-prompt.session.v1", ({ params, client, sessionAccessAuthority: auth, respond }) => {
-			const profile = client?.authenticatedUserProfile?.profileId;
-			if (!auth || !profile) {
-				respond(false, undefined, { code: "FORBIDDEN", message: "Better requires an authenticated session writer." });
-				return;
-			}
-			auth.assertCurrent();
-			const { sessionKey, agentId, sessionId, lifecycleRevision } = auth.target;
-			const slot = JSON.stringify(["person", profile, agentId, sessionKey, sessionId, lifecycleRevision ?? null]);
-			const { op, input } = params;
-			if (op === "start" && Check(contract.operations.start.input, input)) {
-				const borrow = auth.retain();
-				try {
-					borrow.assertCurrent();
-					const { receipt, run, finished } = start(input, { sessionKey, agentId, slot, signal: borrow.signal });
-					// A session reset or revoked grant cannot leave an accessible result behind.
-					const revoke = () => { if (runs.get(slot) === run) runs.delete(slot); };
-					borrow.signal.addEventListener("abort", revoke, { once: true });
-					void finished.finally(() => {
-						borrow.signal.removeEventListener("abort", revoke);
-						borrow.release();
-						// A closed browser or reset chat may never come back to collect the result.
-						setTimeout(revoke, HELPER_TIMEOUT_MS).unref();
-					});
-					auth.assertCurrent();
-					respond(true, receipt);
-				} catch (error) {
-					borrow.release();
-					throw error;
+		api.registerGatewayMethod(
+			METHOD,
+			({ params, client, sessionAccessAuthority: auth, respond }) => {
+				if (!auth) {
+					respond(false, undefined, { code: "FORBIDDEN", message: "Better runs in a chat you can write to." });
+					return;
 				}
-				return;
-			}
-			if ((op === "active" || op === "cancel" || op === "take") && Check(contract.operations.take.input, input)) {
-				respond(true, op === "active" ? active(slot, input) : op === "cancel" ? cancel(slot, input) : take(slot, input));
-				return;
-			}
-			respond(false, undefined, { code: "INVALID_REQUEST", message: "Invalid Better operation or input." });
-		}, { scope: "operator.write", profileAccess: "required", sessionAccess: { mode: "write", allowOwnSessionScope: true } });
-		return {
-			start: (input, context) => start(input, legacy(context)).receipt,
-			active: (input, context) => active(legacy(context).slot, input),
-			cancel: (input, context) => cancel(legacy(context).slot, input),
-			take: (input, context) => take(legacy(context).slot, input),
-		};
+				auth.assertCurrent();
+				// Chat, incarnation and caller come from the host, never from the browser.
+				const { sessionKey, agentId, sessionId, lifecycleRevision } = auth.target;
+				const profile = client?.authenticatedUserProfile?.profileId ?? null;
+				const slot = JSON.stringify([profile, agentId, sessionKey, sessionId, lifecycleRevision ?? null]);
+				const { op, input } = params;
+				if (op === "start" && Check(StartInput, input)) {
+					const borrow = auth.retain();
+					try {
+						borrow.assertCurrent();
+						const { started, run, finished } = start(input, { sessionKey, agentId, slot, signal: borrow.signal });
+						// A session reset or revoked grant cannot leave an accessible result behind.
+						const revoke = () => {
+							if (runs.get(slot) === run) runs.delete(slot);
+						};
+						borrow.signal.addEventListener("abort", revoke, { once: true });
+						void finished.finally(() => {
+							borrow.signal.removeEventListener("abort", revoke);
+							borrow.release();
+							// A closed browser or reset chat may never come back to collect the result.
+							setTimeout(revoke, HELPER_TIMEOUT_MS).unref();
+						});
+						auth.assertCurrent();
+						respond(true, started);
+					} catch (error) {
+						borrow.release();
+						throw error;
+					}
+					return;
+				}
+				if ((op === "active" || op === "cancel" || op === "take") && Check(Receipt, input)) {
+					respond(true, op === "active" ? active(slot, input) : op === "cancel" ? cancel(slot, input) : take(slot, input));
+					return;
+				}
+				respond(false, undefined, { code: "INVALID_REQUEST", message: "Invalid Better operation or input." });
+			},
+			{ scope: "operator.write", profileAccess: "required", sessionAccess: { mode: "write", allowOwnSessionScope: true } },
+		);
 	},
 });
