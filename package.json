@@ -29,7 +29,7 @@
     "typescript": "7.0.2"
   },
   "peerDependencies": {
-    "openclaw": ">=2026.11.4"
+    "openclaw": ">=2026.11.11"
   },
   "openclaw": {
     "extensions": [
@@ -37,7 +37,7 @@
     ],
     "controlUi": "./src/control-ui.ts",
     "compat": {
-      "pluginApi": ">=2026.11.4"
+      "pluginApi": ">=2026.11.11"
     },
     "build": {
       "openclawVersion": "2026.11.6",

@@ -44,10 +44,10 @@ edits or restart. To turn conversation access off later, set
 
 ## Requirements
 
-- OpenClaw with composer tasks and plugin forks bound to the caller's own chat
-  ([openclaw/openclaw#204411](https://github.com/openclaw/openclaw/pull/204411)), and
-  capability-approved conversation access. On an older OpenClaw, pressing **Better** says to
-  update.
+- OpenClaw 2026.11.11 or later. Better needs
+  [openclaw/openclaw#204411](https://github.com/openclaw/openclaw/pull/204411) (merged as
+  `56f8670`), which runs a plugin's helper in the caller's own chat; the 2026.11.10 release line
+  was cut before it. Conversation access must be approved.
 - The chat's tool policy must allow `read` and `ls`; `exec` is optional.
 
 ## Develop
