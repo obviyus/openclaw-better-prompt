@@ -1,7 +1,8 @@
 import { Check } from "typebox/value";
 import { randomUUID } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
-import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
+import { defineFeatureContract } from "openclaw/plugin-sdk/feature-contract";
+import { defineFeaturePlugin } from "openclaw/plugin-sdk/feature-plugin";
 import { buildHelperTask, parseMarkedPrompt } from "./better.ts";
 import { METHOD, Receipt, StartInput, type Active, type Progress, type Result, type Started } from "./contract.ts";
 import { createProgress } from "./progress.ts";
@@ -35,11 +36,13 @@ function failure(error: unknown): string {
 	return message.trim() || "The helper failed without an error message.";
 }
 
-export default definePluginEntry({
-	id: "better-prompt",
+export default defineFeaturePlugin({
+	// No feature operations: those are session actions that need general write. The contract only
+	// gives `openclaw plugins build` the plugin's metadata; Better's one entry point is METHOD below.
+	contract: defineFeatureContract({ pluginId: "better-prompt", operations: {}, events: {} }),
 	name: "Better Prompt",
 	description: "/better from pi-better: deepen a prompt on a read-only copy of the chat, then put it in the composer.",
-	register(api) {
+	setup(api) {
 		// One run per person and chat incarnation, as in pi-better; a finished result waits here
 		// until its starter takes it.
 		const runs = new Map<string, Run>();
@@ -190,5 +193,6 @@ export default definePluginEntry({
 			},
 			{ scope: "operator.write", profileAccess: "required", sessionAccess: { mode: "write", allowOwnSessionScope: true } },
 		);
+		return {};
 	},
 });
