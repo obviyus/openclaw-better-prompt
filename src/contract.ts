@@ -1,9 +1,9 @@
 import { defineFeatureContract } from "openclaw/plugin-sdk/feature-contract";
 import { Type } from "typebox";
 
-const NoInput = Type.Object({}, { additionalProperties: false });
 const RunId = Type.String({ minLength: 1, maxLength: 200 });
 const Token = Type.String({ minLength: 16, maxLength: 200 });
+const Receipt = Type.Object({ runId: RunId, token: Token }, { additionalProperties: false });
 const Tools = Type.Array(
 	Type.Object({
 		label: Type.String({ maxLength: 400 }),
@@ -28,7 +28,7 @@ export const contract = defineFeatureContract({
 		active: {
 			kind: "action",
 			description: "This chat's /better run, running or finished and not yet taken, so a returning composer can show it.",
-			input: NoInput,
+			input: Receipt,
 			output: Type.Object({
 				runId: Type.Optional(RunId),
 				startedAt: Type.Optional(Type.Integer()),
@@ -46,13 +46,13 @@ export const contract = defineFeatureContract({
 		cancel: {
 			kind: "action",
 			description: "Stop this chat's /better run.",
-			input: NoInput,
+			input: Receipt,
 			output: Type.Object({ cancelled: Type.Boolean() }),
 		},
 		take: {
 			kind: "action",
 			description: "Take a finished /better result once, with the token its start returned.",
-			input: Type.Object({ runId: RunId, token: Token }, { additionalProperties: false }),
+			input: Receipt,
 			output: Type.Object({
 				improved: Type.Optional(Type.String()),
 				error: Type.Optional(Type.String()),
@@ -60,17 +60,5 @@ export const contract = defineFeatureContract({
 			}),
 		},
 	},
-	events: {
-		// Labels and counts only: every operator connection receives plugin events, so the
-		// conversation-derived prompt itself never travels here.
-		progress: Type.Object({
-			sessionKey: Type.String({ maxLength: 512 }),
-			runId: RunId,
-			startedAt: Type.Integer(),
-			tools: Tools,
-			toolCount: Type.Integer({ minimum: 0 }),
-			failedCount: Type.Integer({ minimum: 0 }),
-			done: Type.Boolean(),
-		}),
-	},
+	events: {},
 });

@@ -20,7 +20,7 @@
     "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/index.js --external:openclaw --external:'openclaw/*' && openclaw plugins build",
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test src/better.test.ts src/progress.test.ts",
-    "test:runtime": "TSX_TSCONFIG_PATH=\"${OPENCLAW_SOURCE:?set OPENCLAW_SOURCE to an OpenClaw checkout}/tsconfig.json\" \"$OPENCLAW_SOURCE/node_modules/.bin/tsx\" --test src/index.test.ts"
+    "test:runtime": "TSX_TSCONFIG_PATH=\"${OPENCLAW_SOURCE:?set OPENCLAW_SOURCE to an OpenClaw checkout}/tsconfig.json\" \"$OPENCLAW_SOURCE/node_modules/.bin/tsx\" --test src/index.test.ts src/scoped-composer.test.ts"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
