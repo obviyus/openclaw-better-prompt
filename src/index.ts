@@ -6,6 +6,7 @@ import { defineFeaturePlugin } from "openclaw/plugin-sdk/feature-plugin";
 import { buildHelperTask, parseMarkedPrompt } from "./better.ts";
 import { METHOD, Receipt, StartInput, type Active, type Progress, type Result, type Started } from "./contract.ts";
 import { createProgress } from "./progress.ts";
+import { refusalMessage } from "./refusal.ts";
 
 // pi-better's limits: the helper reads with read and ls and searches with the shell (exec).
 // OpenClaw decides which of them this chat and caller may run.
@@ -32,6 +33,8 @@ function failure(error: unknown): string {
 	if (outcome && typeof outcome === "object" && Reflect.get(outcome, "status") === "timeout") {
 		return `The helper timed out after ${HELPER_TIMEOUT_MS / 60_000} minutes; try a narrower prompt.`;
 	}
+	const plain = refusalMessage(error);
+	if (plain) return plain;
 	const message = error instanceof Error ? error.message : String(error);
 	return message.trim() || "The helper failed without an error message.";
 }

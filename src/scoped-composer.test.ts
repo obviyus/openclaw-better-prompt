@@ -8,7 +8,7 @@ import plugin from "./control-ui.ts";
 const cases = [
 	{ send: false, readOnly: false, title: "Better rewrote your prompt" },
 	{ send: true, readOnly: false, title: "Better rewrote your prompt" },
-	{ send: false, readOnly: true, title: "Better rewrote your prompt read-only: this chat did not let it run commands" },
+	{ send: false, readOnly: true, title: "Better rewrote your prompt read-only. To let it run commands, send a message, then try again." },
 ];
 for (const { send, readOnly, title } of cases) test(`composer: send=${send} readOnly=${readOnly}`, async () => {
 	const actions = new Map<string, ControlUiAction>();

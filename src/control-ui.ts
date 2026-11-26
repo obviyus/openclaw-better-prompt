@@ -138,7 +138,7 @@ export default defineControlUiPlugin({
 				if (result.improved) {
 					// Replaces the draft at once as one undoable edit; with send, the composer then sends it.
 					const title = result.readOnly
-						? "Better rewrote your prompt read-only: this chat did not let it run commands"
+						? "Better rewrote your prompt read-only. To let it run commands, send a message, then try again."
 						: "Better rewrote your prompt";
 					await task.propose(result.improved, { title, insert: true, send: run.send });
 				} else if (!result.cancelled) {

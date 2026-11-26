@@ -135,3 +135,19 @@ test("read and ls refused too: a clear error", async () => {
 	await flush();
 	assert.match((await request("one", "first", "take", held)).value.error, /tool policy does not let Better's helper read files/);
 });
+
+test("a core fork error shows the plain message", async () => {
+	const { request, forks, flush } = setup();
+	const key = "agent:main:dashboard:118d4675-b4f2-452e-8558-081098b3954c";
+	const pending = request("one", "first", "start", { prompt: "draft" });
+	await flush();
+	// The fake queues the fork until settled; make the call reject like core does.
+	forks[0].settle(Promise.reject(new Error(`No active session context for "${key}".`)) as never);
+	const started = await pending;
+	const held = { runId: started.value.runId, token: started.value.token };
+	await flush();
+	assert.equal(
+		(await request("one", "first", "take", held)).value.error,
+		"Better found no messages in this chat. Send a message first.",
+	);
+});
