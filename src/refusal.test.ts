@@ -5,10 +5,10 @@ import { refusalMessage } from "./refusal.ts";
 const key = "agent:main:dashboard:118d4675-b4f2-452e-8558-081098b3954c";
 const entry = "9f2c1a7e";
 
-test("no active session context: send a message first", () => {
+test("no active session context: says the chat has no messages", () => {
 	assert.equal(
 		refusalMessage(new Error(`No active session context for "${key}".`)),
-		"Better found no messages in this chat. Send a message first.",
+		"Better needs at least one message in this chat to work from.",
 	);
 });
 
@@ -23,10 +23,10 @@ test("no active entry: try again", () => {
 	);
 });
 
-test("input compacted away: send a message", () => {
+test("input compacted away: says Better could not read it", () => {
 	assert.equal(
 		refusalMessage(new Error(`Session "${key}" no longer holds the input of entry "${entry}".`)),
-		"Better cannot find your last message. Send a message, then try again.",
+		"Better could not read this chat's latest message. Try again.",
 	);
 });
 

@@ -148,6 +148,6 @@ test("a core fork error shows the plain message", async () => {
 	await flush();
 	assert.equal(
 		(await request("one", "first", "take", held)).value.error,
-		"Better found no messages in this chat. Send a message first.",
+		"Better needs at least one message in this chat to work from.",
 	);
 });

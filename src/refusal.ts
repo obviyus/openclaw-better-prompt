@@ -5,7 +5,7 @@ const PATTERNS: Array<{ match: RegExp; message: string }> = [
 	{
 		// openclaw src/gateway/server-plugin-forked-turn.ts lines 138 and 237
 		match: /No active session context for/,
-		message: "Better found no messages in this chat. Send a message first.",
+		message: "Better needs at least one message in this chat to work from.",
 	},
 	{
 		// openclaw src/gateway/server-plugin-forked-turn.ts line 242
@@ -15,7 +15,7 @@ const PATTERNS: Array<{ match: RegExp; message: string }> = [
 	{
 		// openclaw src/gateway/server-plugin-forked-turn.ts line 250
 		match: /no longer holds the input of entry/,
-		message: "Better cannot find your last message. Send a message, then try again.",
+		message: "Better could not read this chat's latest message. Try again.",
 	},
 ];
 
